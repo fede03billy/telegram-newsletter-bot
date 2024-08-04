@@ -255,7 +255,6 @@ async def trigger_summary(update: Update, context: ContextTypes.DEFAULT_TYPE):
             logger.info(f"Job scheduled: {job}")
         except Exception as job_error:
             logger.error(f"Error scheduling job: {str(job_error)}")
-            logger.error(f"Job queue error traceback: {traceback.format_exc()}")
             await update.message.reply_text(
                 "An error occurred while scheduling the summary. Please try again later."
             )

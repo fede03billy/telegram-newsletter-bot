@@ -45,12 +45,12 @@ async def fetch_emails_for_mailbox(mailbox):
 
 
 async def summarize_emails(emails):
-    logger.debug("Ciao summer")
-    if not emails:
+    print("Entering summarize_emails function")
+    if not emails or not isinstance(emails, list):
         logger.info("No new emails to summarize.")
         return "No new emails to summarize."
 
-    logger.debug(f"Number of emails to summarize: {len(emails)}")
+    print(f"Number of emails to summarize: {len(emails)}")
 
     all_text = ""
     for email in emails:
@@ -58,12 +58,10 @@ async def summarize_emails(emails):
         body = email.get("body", "No Content")
         all_text += f"Subject: {subject}\n\nContent:\n{body}\n\n---\n\n"
 
-    logger.debug(f"Text to summarize (first 1000 chars): {all_text[:1000]}...")
-
     try:
-        logger.debug("About to call ollama_client.summarize_text")
+        print("About to call ollama_client.summarize_text")
         summary = await ollama_client.summarize_text(all_text)
-        logger.debug(
+        print(
             f"Received summary from Ollama (first 100 chars): {summary[:100] if summary else 'No summary generated'}..."
         )
 
