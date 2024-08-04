@@ -2,6 +2,7 @@
 import logging
 from telegram.ext import Application, CommandHandler
 from config import TELEGRAM_BOT_TOKEN
+from database.models import get_session, User
 
 # Set up logging
 logging.basicConfig(
@@ -28,7 +29,21 @@ async def help_command(update, context):
     await update.message.reply_text(help_text)
 
 
+def init_db():
+    session = get_session()
+    try:
+        # Check if we can connect to the database
+        session.execute("SELECT 1")
+        logger.info("Database initialized successfully")
+    except Exception as e:
+        logger.error(f"Error initializing database: {e}")
+    finally:
+        session.close()
+
+
 def main():
+    init_db()
+
     application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
 
     application.add_handler(CommandHandler("start", start))
