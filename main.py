@@ -3,6 +3,8 @@ import logging
 from telegram.ext import Application, CommandHandler
 from config import TELEGRAM_BOT_TOKEN
 from database.models import get_session, User
+from bot.commands import create_mailbox
+from sqlalchemy import text
 
 # Set up logging
 logging.basicConfig(
@@ -33,7 +35,7 @@ def init_db():
     session = get_session()
     try:
         # Check if we can connect to the database
-        session.execute("SELECT 1")
+        session.execute(text("SELECT 1"))
         logger.info("Database initialized successfully")
     except Exception as e:
         logger.error(f"Error initializing database: {e}")
@@ -42,13 +44,17 @@ def init_db():
 
 
 def main():
+    logger.info("Starting the bot")
+
     init_db()
 
     application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
 
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", help_command))
+    application.add_handler(CommandHandler("create_mailbox", create_mailbox))
 
+    logger.info("Bot is ready to accept commands")
     application.run_polling()
 
 
