@@ -2,9 +2,14 @@
 import logging
 import secrets
 import string
-from telegram import Update
-from telegram.ext import ContextTypes
-from database.models import get_session, User, Mailbox
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import (
+    ContextTypes,
+    ConversationHandler,
+    CallbackQueryHandler,
+    CommandHandler,
+)
+from database.models import get_session, User, Mailbox, SummaryFrequency
 from api_clients.mail_tm import mail_tm_client
 
 logging.basicConfig(level=logging.INFO)
@@ -113,3 +118,98 @@ async def list_mailboxes(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     finally:
         session.close()
+
+
+# Define conversation states
+SELECTING_MAILBOX, SELECTING_FREQUENCY = range(2)
+
+
+async def set_frequency(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.effective_chat.id
+    logger.debug(f"Received set_frequency command. Chat ID: {chat_id}")
+
+    session = get_session()
+    try:
+        user = session.query(User).filter_by(chat_id=str(chat_id)).first()
+        if not user or not user.mailboxes:
+            await update.message.reply_text(
+                "You don't have any mailboxes yet. Use /create_mailbox to create one."
+            )
+            return ConversationHandler.END
+
+        mailboxes = user.mailboxes[:3]  # Limit to 3 mailboxes
+        keyboard = [
+            [
+                InlineKeyboardButton(
+                    f"{mb.email} ({mb.tag})", callback_data=f"mailbox:{mb.id}"
+                )
+            ]
+            for mb in mailboxes
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.message.reply_text(
+            "Select a mailbox to set frequency:", reply_markup=reply_markup
+        )
+        return SELECTING_MAILBOX
+    except Exception as e:
+        logger.exception("An error occurred while setting frequency")
+        await update.message.reply_text("An error occurred. Please try again later.")
+        return ConversationHandler.END
+    finally:
+        session.close()
+
+
+async def mailbox_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    mailbox_id = query.data.split(":")[1]
+    context.user_data["selected_mailbox"] = mailbox_id
+
+    keyboard = [
+        [InlineKeyboardButton("Daily", callback_data="freq:daily")],
+        [InlineKeyboardButton("Weekly", callback_data="freq:weekly")],
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await query.edit_message_text(
+        "Select summary frequency:", reply_markup=reply_markup
+    )
+    return SELECTING_FREQUENCY
+
+
+async def frequency_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    frequency = query.data.split(":")[1]
+    mailbox_id = context.user_data["selected_mailbox"]
+
+    session = get_session()
+    try:
+        mailbox = session.query(Mailbox).filter_by(id=mailbox_id).first()
+        if mailbox:
+            mailbox.summary_frequency = SummaryFrequency[frequency.upper()]
+            session.commit()
+            await query.edit_message_text(
+                f"Frequency for mailbox {mailbox.email} set to {frequency}."
+            )
+        else:
+            await query.edit_message_text("Mailbox not found. Please try again.")
+    except Exception as e:
+        logger.exception("An error occurred while setting frequency")
+        await query.edit_message_text("An error occurred. Please try again later.")
+    finally:
+        session.close()
+    return ConversationHandler.END
+
+
+set_frequency_handler = ConversationHandler(
+    entry_points=[CommandHandler("set_frequency", set_frequency)],
+    states={
+        SELECTING_MAILBOX: [
+            CallbackQueryHandler(mailbox_selected, pattern=r"^mailbox:")
+        ],
+        SELECTING_FREQUENCY: [
+            CallbackQueryHandler(frequency_selected, pattern=r"^freq:")
+        ],
+    },
+    fallbacks=[],
+)
