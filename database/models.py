@@ -1,9 +1,18 @@
 # database/models.py
-from sqlalchemy import create_engine, Column, Integer, String, ForeignKey, Enum
+from sqlalchemy import (
+    create_engine,
+    Column,
+    Integer,
+    String,
+    ForeignKey,
+    Enum,
+    DateTime,
+)
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship, sessionmaker
 from config import DATABASE_URL
 import enum
+from datetime import datetime, timedelta
 
 Base = declarative_base()
 
@@ -30,6 +39,15 @@ class Mailbox(Base):
     summary_frequency = Column(Enum(SummaryFrequency), default=SummaryFrequency.DAILY)
     user_id = Column(Integer, ForeignKey("users.id"))
     user = relationship("User", back_populates="mailboxes")
+    password = Column(String, nullable=False)  # Encrypt this later
+    last_summary_sent = Column(DateTime, default=datetime.utcnow)
+    next_summary_time = Column(DateTime, default=datetime.utcnow)
+
+    def calculate_next_summary_time(self):
+        if self.summary_frequency == SummaryFrequency.DAILY:
+            self.next_summary_time = datetime.utcnow() + timedelta(days=1)
+        elif self.summary_frequency == SummaryFrequency.WEEKLY:
+            self.next_summary_time = datetime.utcnow() + timedelta(days=7)
 
 
 # Create the database engine

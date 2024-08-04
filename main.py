@@ -1,10 +1,17 @@
 # main.py
+import asyncio
 import logging
 from telegram.ext import Application, CommandHandler
 from config import TELEGRAM_BOT_TOKEN
 from database.models import get_session, User
-from bot.commands import create_mailbox, list_mailboxes, set_frequency_handler
+from bot.commands import (
+    create_mailbox,
+    list_mailboxes,
+    set_frequency_handler,
+    trigger_summary,
+)
 from sqlalchemy import text
+from tasks import fetch_all_emails, send_summaries, process_user_mailbox
 
 # Set up logging
 logging.basicConfig(
@@ -27,6 +34,7 @@ async def help_command(update, context):
     /create_mailbox <tag> - Create a new mailbox with the given tag
     /list_mailboxes - List your active mailboxes (up to 3)
     /set_frequency - Set summary frequency for a mailbox
+    /trigger_summary - Trigger immediate summary generation for all mailboxes
     """
     await update.message.reply_text(help_text)
 
@@ -43,6 +51,11 @@ def init_db():
         session.close()
 
 
+async def background_job(context):
+    await fetch_all_emails()
+    await send_summaries()
+
+
 def main():
     logger.info("Starting the bot")
 
@@ -54,7 +67,26 @@ def main():
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("create_mailbox", create_mailbox))
     application.add_handler(CommandHandler("list_mailboxes", list_mailboxes))
+    application.add_handler(CommandHandler("trigger_summary", trigger_summary))
     application.add_handler(set_frequency_handler)
+
+    # Schedule jobs for all existing users
+    session = get_session()
+    try:
+        users = session.query(User).all()
+        for user in users:
+            next_run = min(
+                (mb.next_summary_time for mb in user.mailboxes), default=None
+            )
+            if next_run:
+                application.job_queue.run_once(
+                    process_user_mailbox,
+                    when=next_run,
+                    data={"user_id": user.id},
+                    name=f"user_{user.id}_summary",
+                )
+    finally:
+        session.close()
 
     logger.info("Bot is ready to accept commands")
     application.run_polling()

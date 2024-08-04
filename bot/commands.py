@@ -11,6 +11,7 @@ from telegram.ext import (
 )
 from database.models import get_session, User, Mailbox, SummaryFrequency
 from api_clients.mail_tm import mail_tm_client
+from tasks import process_user_mailbox
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -64,7 +65,7 @@ async def create_mailbox(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if account:
             token = await mail_tm_client.get_token(email, password)
             if token:
-                mailbox = Mailbox(email=email, tag=tag, user=user)
+                mailbox = Mailbox(email=email, password=password, tag=tag, user=user)
                 session.add(mailbox)
                 session.commit()
                 await update.message.reply_text(
@@ -188,6 +189,17 @@ async def frequency_selected(update: Update, context: ContextTypes.DEFAULT_TYPE)
         if mailbox:
             mailbox.summary_frequency = SummaryFrequency[frequency.upper()]
             session.commit()
+
+            # Schedule or reschedule the job for this user
+            user = mailbox.user
+            next_run = min(mb.next_summary_time for mb in user.mailboxes)
+            context.job_queue.run_once(
+                process_user_mailbox,
+                when=next_run,
+                data={"user_id": user.id},
+                name=f"user_{user.id}_summary",
+            )
+
             await query.edit_message_text(
                 f"Frequency for mailbox {mailbox.email} set to {frequency}."
             )
@@ -212,4 +224,71 @@ set_frequency_handler = ConversationHandler(
         ],
     },
     fallbacks=[],
+    per_message=False,
 )
+
+
+async def trigger_summary(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.effective_chat.id
+    logger.info(f"Triggering summary for chat_id: {chat_id}")
+    session = get_session()
+    try:
+        user = session.query(User).filter_by(chat_id=str(chat_id)).first()
+        if not user:
+            logger.info(f"No mailboxes set up for chat_id: {chat_id}")
+            await update.message.reply_text("You don't have any mailboxes set up.")
+            return
+
+        logger.info(f"Found user with id: {user.id}")
+        await update.message.reply_text(
+            "Checking for new emails and generating summaries..."
+        )
+        logger.info(f"About to schedule process_user_mailbox for user_id: {user.id}")
+
+        try:
+            job = context.job_queue.run_once(
+                process_user_mailbox,
+                when=0,  # Run immediately
+                data={"user_id": user.id},
+                name=f"user_{user.id}_summary_trigger",
+            )
+            logger.info(f"Job scheduled: {job}")
+        except Exception as job_error:
+            logger.error(f"Error scheduling job: {str(job_error)}")
+            logger.error(f"Job queue error traceback: {traceback.format_exc()}")
+            await update.message.reply_text(
+                "An error occurred while scheduling the summary. Please try again later."
+            )
+            return
+
+        logger.info(
+            f"Successfully scheduled process_user_mailbox for user_id: {user.id}"
+        )
+
+        # Add a check to see if the job was actually scheduled
+        scheduled_jobs = context.job_queue.get_jobs_by_name(
+            f"user_{user.id}_summary_trigger"
+        )
+        if not scheduled_jobs:
+            logger.error(
+                f"Job was not found in the queue after scheduling for user_id: {user.id}"
+            )
+            await update.message.reply_text(
+                "An error occurred while scheduling the summary. Please try again later."
+            )
+            return
+
+        logger.info(f"Job found in queue: {scheduled_jobs[0]}")
+
+    except Exception as e:
+        logger.error(f"Error triggering summary: {str(e)}")
+        await update.message.reply_text(
+            "An error occurred while triggering the summary. Please try again later."
+        )
+    finally:
+        session.close()
+
+
+async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Operation cancelled.")
+    return ConversationHandler.END
