@@ -48,25 +48,34 @@ class MailTMClient:
         headers = {"Authorization": f"Bearer {token}"}
         async with aiohttp.ClientSession(headers=headers) as session:
             async with session.get(
-                f"{self.base_url}/messages?page=1&isDeleted=false&seen=false"
+                f"{self.base_url}/messages?page=1&isDeleted=false"
             ) as response:
                 if response.status == 200:
+                    print("Fetching messages...")
+                    print(f"message response: {response}")
                     data = await response.json()
-                    messages = data["hydra:member"]
-                    logger.debug(f"Received messages data: {data}")
+                    all_messages = data["hydra:member"]
+                    print(f"Received messages data: {data}")
+
+                    # Filter unread messages
+                    unread_messages = [
+                        msg for msg in all_messages if msg.get("seen") == False
+                    ]
+                    print(f"Number of unread messages: {len(unread_messages)}")
+
                     full_messages = []
-                    for message in messages:
+                    for message in unread_messages:
                         # Fetch full message content
                         async with session.get(
                             f"{self.base_url}/messages/{message['id']}"
                         ) as msg_response:
                             if msg_response.status == 200:
                                 full_message = await msg_response.json()
-                                logger.debug(f"Full message data: {full_message}")
+                                print(f"Full unread message data: {full_message}")
                                 full_messages.append(full_message)
                             else:
                                 logger.error(
-                                    f"Failed to fetch full message: {message['id']}"
+                                    f"Failed to fetch full unread message: {message['id']}"
                                 )
                     return full_messages
                 else:
@@ -74,17 +83,23 @@ class MailTMClient:
                     return []
 
     async def mark_message_as_read(self, token, message_id):
-        headers = {"Authorization": f"Bearer {token}"}
-        async with aiohttp.ClientSession(headers=headers) as session:
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/merge-patch+json",  # This is the key change
+        }
+        async with aiohttp.ClientSession() as session:
             async with session.patch(
-                f"{self.base_url}/messages/{message_id}", json={"seen": True}
+                f"{self.base_url}/messages/{message_id}",
+                headers=headers,
+                json={"seen": True},
             ) as response:
                 if response.status == 200:
                     logger.info(f"Marked message {message_id} as read")
                     return True
                 else:
+                    response_text = await response.text()
                     logger.error(
-                        f"Failed to mark message {message_id} as read. Status: {response.status}"
+                        f"Failed to mark message {message_id} as read. Status: {response.status}, Response: {response_text}"
                     )
                     return False
 

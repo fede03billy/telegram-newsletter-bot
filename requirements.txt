@@ -2,3 +2,5 @@ python-telegram-bot
 python-dotenv
 SQLAlchemy
 aiohttp
+tenacity
+python-telegram-bot[job-queue]

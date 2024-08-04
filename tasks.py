@@ -10,7 +10,7 @@ logging.basicConfig(level=logging.DEBUG)
 
 
 async def fetch_emails_for_mailbox(mailbox):
-    logger.info(f"Fetching emails for mailbox: {mailbox.email}")
+    logger.info(f"Fetching unread emails for mailbox: {mailbox.email}")
     token = await mail_tm_client.get_token(mailbox.email, mailbox.password)
     if not token:
         logger.error(f"Failed to authenticate mailbox: {mailbox.email}")
@@ -21,7 +21,7 @@ async def fetch_emails_for_mailbox(mailbox):
 
     processed_messages = []
     for message in unread_messages:
-        logger.debug(f"Processing message: {message}")
+        logger.debug(f"Processing unread message: {message}")
 
         content = message.get("text", message.get("html", ""))
         if not content:
@@ -37,7 +37,9 @@ async def fetch_emails_for_mailbox(mailbox):
         # Mark the message as read
         await mail_tm_client.mark_message_as_read(token, message["id"])
 
-    logger.info(f"Processed {len(processed_messages)} messages for {mailbox.email}")
+    logger.info(
+        f"Processed {len(processed_messages)} unread messages for {mailbox.email}"
+    )
     return processed_messages
 
 
@@ -104,12 +106,16 @@ async def process_user_mailbox(context):
         for mailbox in user.mailboxes:
             logger.info(f"Processing mailbox: {mailbox.email}")
             try:
-                emails = await fetch_emails_for_mailbox(mailbox)
-                logger.info(f"Fetched {len(emails)} emails for {mailbox.email}")
-                if emails:
+                unread_emails = await fetch_emails_for_mailbox(mailbox)
+                logger.info(
+                    f"Fetched {len(unread_emails)} unread emails for {mailbox.email}"
+                )
+                if unread_emails:
                     any_emails_processed = True
-                    logger.info(f"Summarizing {len(emails)} emails for {mailbox.email}")
-                    summary = await summarize_emails(emails)
+                    logger.info(
+                        f"Summarizing {len(unread_emails)} unread emails for {mailbox.email}"
+                    )
+                    summary = await summarize_emails(unread_emails)
                     if summary:
                         logger.info(f"Summary generated for {mailbox.email}")
                         await send_summary(context.bot, user.chat_id, summary)
@@ -120,7 +126,7 @@ async def process_user_mailbox(context):
                         await send_summary(
                             context.bot,
                             user.chat_id,
-                            f"Failed to summarize {len(emails)} new emails for {mailbox.email}. Please check your mailbox directly.",
+                            f"Failed to summarize {len(unread_emails)} new emails for {mailbox.email}. Please check your mailbox directly.",
                         )
                 mailbox.calculate_next_summary_time()
                 session.commit()
@@ -135,9 +141,11 @@ async def process_user_mailbox(context):
                 )
 
         if not any_emails_processed:
-            logger.info(f"No new emails to summarize for user {user_id}")
+            logger.info(f"No new unread emails to summarize for user {user_id}")
             await send_summary(
-                context.bot, user.chat_id, "No new emails to summarize at this time."
+                context.bot,
+                user.chat_id,
+                "No new unread emails to summarize at this time.",
             )
 
         # Reschedule the job
