@@ -3,7 +3,7 @@ import logging
 from telegram.ext import Application, CommandHandler
 from config import TELEGRAM_BOT_TOKEN
 from database.models import get_session, User
-from bot.commands import create_mailbox
+from bot.commands import create_mailbox, list_mailboxes
 from sqlalchemy import text
 
 # Set up logging
@@ -24,9 +24,9 @@ async def help_command(update, context):
     Available commands:
     /start - Start the bot
     /help - Show this help message
-    /create_mailbox - Create a new mailbox
-    /set_frequency - Set summary frequency for a mailbox
-    /list_mailboxes - List your active mailboxes
+    /create_mailbox <tag> - Create a new mailbox with the given tag
+    /list_mailboxes - List your active mailboxes (up to 3)
+    /set_frequency - Set summary frequency for a mailbox (Not implemented yet)
     """
     await update.message.reply_text(help_text)
 
@@ -53,6 +53,7 @@ def main():
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("create_mailbox", create_mailbox))
+    application.add_handler(CommandHandler("list_mailboxes", list_mailboxes))
 
     logger.info("Bot is ready to accept commands")
     application.run_polling()
