@@ -2,6 +2,7 @@
 import asyncio
 import logging
 from telegram.ext import Application, CommandHandler
+from telegram import ParseMode
 from config import TELEGRAM_BOT_TOKEN
 from database.models import get_session, User
 from bot.commands import (
@@ -57,6 +58,9 @@ def main():
     init_db()
 
     application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
+    application.bot.defaults = application.bot.defaults.update(
+        parse_mode=ParseMode.MARKDOWN_V2
+    )
 
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", help_command))
