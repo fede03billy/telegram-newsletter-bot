@@ -2,7 +2,7 @@
 import asyncio
 import logging
 from telegram.ext import Application, CommandHandler
-from telegram import ParseMode
+from telegram.constants import ParseMode
 from config import TELEGRAM_BOT_TOKEN
 from database.models import get_session, User
 from bot.commands import (
