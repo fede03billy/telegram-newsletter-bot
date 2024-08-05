@@ -3,7 +3,34 @@ import logging
 from database.models import get_session, Mailbox, SummaryFrequency, User
 from api_clients.mail_tm import mail_tm_client
 from api_clients.ollama import ollama_client
-from datetime import datetime
+from telegram.constants import ParseMode
+import re
+
+
+def format_for_telegram(text):
+    # Escape special characters
+    special_chars = "_*[]()~`>#+-=|{}.!"
+    for char in special_chars:
+        text = text.replace(char, f"\\{char}")
+
+    # Replace markdown formatting with Telegram-compatible formatting
+    text = re.sub(r"\\\*\\\*(.*?)\\\*\\\*", r"*\1*", text)  # Bold
+    text = re.sub(r"\\\_(.*?)\\\_", r"_\1_", text)  # Italic
+    text = text.replace("\\•", "•")  # Bullet points
+
+    # Unescape periods within URLs
+    text = re.sub(
+        r"(\[.*?\]\()(.*?)(\\\.)(.*?)(\))",
+        lambda m: f"{m.group(1)}{m.group(2)}.{m.group(4)}{m.group(5)}",
+        text,
+    )
+
+    # Ensure proper line breaks
+    paragraphs = text.split("\n\n")
+    formatted_paragraphs = [p.replace("\n", " ").strip() for p in paragraphs]
+
+    return "\n\n".join(formatted_paragraphs)
+
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.DEBUG)
@@ -171,7 +198,11 @@ async def process_user_mailbox(context):
 
 async def send_summary(bot, chat_id, summary):
     try:
-        await bot.send_message(chat_id=chat_id, text=summary)
+        await bot.send_message(
+            chat_id=chat_id,
+            text=format_for_telegram(summary),
+            parse_mode=ParseMode.MARKDOWN_V2,
+        )
         logger.info(f"Summary sent to chat_id: {chat_id}")
     except Exception as e:
         logger.error(f"Error sending summary to chat_id {chat_id}: {str(e)}")
