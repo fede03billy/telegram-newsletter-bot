@@ -169,43 +169,9 @@ async def process_user_mailbox(context):
         session.close()
 
 
-async def fetch_all_emails():
-    session = get_session()
-    try:
-        mailboxes = session.query(Mailbox).all()
-        for mailbox in mailboxes:
-            await process_mailbox(mailbox)
-    finally:
-        session.close()
-
-
-# tasks.py
-
-
 async def send_summary(bot, chat_id, summary):
     try:
         await bot.send_message(chat_id=chat_id, text=summary)
         logger.info(f"Summary sent to chat_id: {chat_id}")
     except Exception as e:
         logger.error(f"Error sending summary to chat_id {chat_id}: {str(e)}")
-
-
-async def send_summaries():
-    session = get_session()
-    try:
-        current_time = datetime.now()
-        mailboxes = session.query(Mailbox).all()
-        for mailbox in mailboxes:
-            if (
-                mailbox.summary_frequency == SummaryFrequency.DAILY
-                and (current_time - mailbox.last_summary_sent).days >= 1
-            ) or (
-                mailbox.summary_frequency == SummaryFrequency.WEEKLY
-                and (current_time - mailbox.last_summary_sent).days >= 7
-            ):
-                summary = await process_mailbox(mailbox)
-                await send_summary(mailbox.user.chat_id, summary)
-                mailbox.last_summary_sent = current_time
-                session.commit()
-    finally:
-        session.close()

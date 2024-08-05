@@ -11,7 +11,7 @@ from bot.commands import (
     trigger_summary,
 )
 from sqlalchemy import text
-from tasks import fetch_all_emails, send_summaries, process_user_mailbox
+from tasks import process_user_mailbox
 
 # Set up logging
 logging.basicConfig(
@@ -49,11 +49,6 @@ def init_db():
         logger.error(f"Error initializing database: {e}")
     finally:
         session.close()
-
-
-async def background_job(context):
-    await fetch_all_emails()
-    await send_summaries()
 
 
 def main():

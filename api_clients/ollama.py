@@ -1,17 +1,8 @@
 # api_clients/ollama.py
 import aiohttp
-from aiohttp import ClientTimeout
 import logging
 from tenacity import retry, stop_after_attempt, wait_exponential
 from config import OLLAMA_API_URL
-import re
-
-
-def clean_text(text):
-    text = re.sub(r"\s+", " ", text)  # Replace multiple spaces with single space
-    text = re.sub(r"\n+", "\n", text)  # Replace multiple newlines with single newline
-    text = re.sub(r"[^\w\s.,!?-]", "", text)  # Remove special characters
-    return text.strip()
 
 
 logger = logging.getLogger(__name__)
@@ -116,19 +107,6 @@ class OllamaClient:
                     return data.get("response", "")
                 else:
                     raise Exception(f"API call failed with status {response.status}")
-
-
-def format_for_telegram(text):
-    # Replace ASCII formatting with Telegram markdown
-    text = text.replace("*", "**")  # Bold
-    text = text.replace("_", "__")  # Italic
-    text = text.replace("•", "\\-")  # Bullet points
-
-    # Ensure proper line breaks
-    paragraphs = text.split("\n\n")
-    formatted_paragraphs = [p.replace("\n", " ").strip() for p in paragraphs]
-
-    return "\n\n".join(formatted_paragraphs)
 
 
 ollama_client = OllamaClient(OLLAMA_API_URL)
