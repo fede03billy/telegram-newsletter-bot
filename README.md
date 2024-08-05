@@ -33,9 +33,6 @@ copytelegram_newsletter_bot/
 │   ├── __init__.py
 │   ├── mail_tm.py
 │   └── ollama.py
-├── utils/
-│   ├── __init__.py
-│   └── summarizer.py
 ├── config.py
 ├── main.py
 ├── tasks.py
@@ -46,7 +43,7 @@ copytelegram_newsletter_bot/
 
 1. Clone the repository:
    ```
-   git clone https://github.com/yourusername/telegram-newsletter-bot.git
+   git clone https://github.com/fede03billy/telegram-newsletter-bot.git
    cd telegram-newsletter-bot
    ```
 
