@@ -8,7 +8,7 @@ from bot.commands import (
     create_mailbox,
     list_mailboxes,
     set_frequency_handler,
-    trigger_summary,
+    trigger_summary_handler,
 )
 from sqlalchemy import text
 from tasks import process_user_mailbox
@@ -62,7 +62,7 @@ def main():
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("create_mailbox", create_mailbox))
     application.add_handler(CommandHandler("list_mailboxes", list_mailboxes))
-    application.add_handler(CommandHandler("trigger_summary", trigger_summary))
+    application.add_handler(trigger_summary_handler)
     application.add_handler(set_frequency_handler)
 
     # Schedule jobs for all existing users

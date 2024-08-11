@@ -1,6 +1,6 @@
 # tasks.py
 import logging
-from database.models import get_session, Mailbox, SummaryFrequency, User
+from database.models import get_session, Mailbox, User
 from api_clients.mail_tm import mail_tm_client
 from api_clients.ollama import ollama_client
 from telegram.constants import ParseMode
@@ -70,9 +70,6 @@ async def fetch_emails_for_mailbox(mailbox):
     return processed_messages
 
 
-# tasks.py
-
-
 async def summarize_emails(emails):
     print("Entering summarize_emails function")
     if not emails or not isinstance(emails, list):
@@ -119,9 +116,51 @@ async def process_mailbox(mailbox):
         logger.info(f"Summary for {mailbox.email}: {summary}")
 
 
-async def process_user_mailbox(context):
+async def process_single_mailbox(bot, chat_id, mailbox_id):
+    logger.info(f"Processing mailbox_id: {mailbox_id} for chat_id: {chat_id}")
+    session = get_session()
+    try:
+        mailbox = session.query(Mailbox).get(mailbox_id)
+        if not mailbox or str(mailbox.user.chat_id) != str(chat_id):
+            logger.error(f"Mailbox not found or doesn't belong to user: {mailbox_id}")
+            await bot.send_message(
+                chat_id=chat_id,
+                text="Mailbox not found or doesn't belong to you.",
+            )
+            return
+
+        unread_emails = await fetch_emails_for_mailbox(mailbox)
+        if unread_emails:
+            summary = await summarize_emails(unread_emails)
+            if summary:
+                await send_summary(bot, chat_id, summary)
+            else:
+                await bot.send_message(
+                    chat_id=chat_id,
+                    text=f"Failed to generate summary for {mailbox.email}",
+                )
+        else:
+            await bot.send_message(
+                chat_id=chat_id,
+                text=f"No new unread emails for {mailbox.email}",
+            )
+
+        mailbox.calculate_next_summary_time()
+        session.commit()
+
+    except Exception as e:
+        logger.error(f"Error processing mailbox {mailbox_id}: {str(e)}")
+        await bot.send_message(
+            chat_id=chat_id,
+            text=f"An error occurred while processing mailbox {mailbox.email}. Please try again later.",
+        )
+    finally:
+        session.close()
+
+
+async def process_user_mailboxes(context):
     user_id = context.job.data["user_id"]
-    logger.info(f"Processing mailbox for user_id: {user_id}")
+    logger.info(f"Processing mailboxes for user_id: {user_id}")
     session = get_session()
     try:
         user = session.query(User).get(user_id)
@@ -129,69 +168,21 @@ async def process_user_mailbox(context):
             logger.error(f"User not found: {user_id}")
             return
 
-        any_emails_processed = False
         for mailbox in user.mailboxes:
-            logger.info(f"Processing mailbox: {mailbox.email}")
-            try:
-                unread_emails = await fetch_emails_for_mailbox(mailbox)
-                logger.info(
-                    f"Fetched {len(unread_emails)} unread emails for {mailbox.email}"
-                )
-                if unread_emails:
-                    any_emails_processed = True
-                    logger.info(
-                        f"Summarizing {len(unread_emails)} unread emails for {mailbox.email}"
-                    )
-                    summary = await summarize_emails(unread_emails)
-                    if summary:
-                        logger.info(f"Summary generated for {mailbox.email}")
-                        await send_summary(context.bot, user.chat_id, summary)
-                    else:
-                        logger.warning(
-                            f"Failed to generate summary for {mailbox.email}"
-                        )
-                        await send_summary(
-                            context.bot,
-                            user.chat_id,
-                            f"Failed to summarize {len(unread_emails)} new emails for {mailbox.email}. Please check your mailbox directly.",
-                        )
-                mailbox.calculate_next_summary_time()
-                session.commit()
-            except Exception as e:
-                logger.error(
-                    f"Error processing mailbox {mailbox.email} for user {user_id}: {str(e)}"
-                )
-                await send_summary(
-                    context.bot,
-                    user.chat_id,
-                    f"An error occurred while processing mailbox {mailbox.email}. Please try again later.",
-                )
-
-        if not any_emails_processed:
-            logger.info(f"No new unread emails to summarize for user {user_id}")
-            await send_summary(
-                context.bot,
-                user.chat_id,
-                "No new unread emails to summarize at this time.",
-            )
+            await process_single_mailbox(context.bot, user.chat_id, mailbox.id)
 
         # Reschedule the job
         next_run = min((mb.next_summary_time for mb in user.mailboxes), default=None)
         if next_run:
             logger.info(f"Rescheduling summary job for user {user_id} at {next_run}")
             context.job_queue.run_once(
-                process_user_mailbox,
+                process_user_mailboxes,
                 when=next_run,
                 data={"user_id": user_id},
                 name=f"user_{user_id}_summary",
             )
     except Exception as e:
         logger.error(f"Error processing mailboxes for user {user_id}: {str(e)}")
-        await send_summary(
-            context.bot,
-            user.chat_id,
-            "An error occurred while processing your mailboxes. Please try again later.",
-        )
     finally:
         session.close()
 

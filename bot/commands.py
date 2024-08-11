@@ -11,7 +11,7 @@ from telegram.ext import (
 )
 from database.models import get_session, User, Mailbox, SummaryFrequency
 from api_clients.mail_tm import mail_tm_client
-from tasks import process_user_mailbox
+from tasks import process_single_mailbox
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -227,6 +227,9 @@ set_frequency_handler = ConversationHandler(
     per_message=False,
 )
 
+# Define a new state for mailbox selection
+SELECTING_MAILBOX_FOR_SUMMARY = 1
+
 
 async def trigger_summary(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
@@ -234,58 +237,75 @@ async def trigger_summary(update: Update, context: ContextTypes.DEFAULT_TYPE):
     session = get_session()
     try:
         user = session.query(User).filter_by(chat_id=str(chat_id)).first()
-        if not user:
-            logger.info(f"No mailboxes set up for chat_id: {chat_id}")
+        if not user or not user.mailboxes:
             await update.message.reply_text("You don't have any mailboxes set up.")
-            return
+            return ConversationHandler.END
 
-        logger.info(f"Found user with id: {user.id}")
+        if len(user.mailboxes) == 1:
+            # If there's only one mailbox, process it directly
+            mailbox = user.mailboxes[0]
+            await process_single_mailbox(context.bot, chat_id, mailbox.id)
+            return ConversationHandler.END
+
+        # If there are multiple mailboxes, let the user choose
+        keyboard = [
+            [
+                InlineKeyboardButton(
+                    f"{mb.email} ({mb.tag})", callback_data=f"summary:{mb.id}"
+                )
+            ]
+            for mb in user.mailboxes
+        ]
+        keyboard.append(
+            [InlineKeyboardButton("All Mailboxes", callback_data="summary:all")]
+        )
+        reply_markup = InlineKeyboardMarkup(keyboard)
         await update.message.reply_text(
-            "Checking for new emails and generating summaries..."
+            "Select a mailbox to summarize:", reply_markup=reply_markup
         )
-        logger.info(f"About to schedule process_user_mailbox for user_id: {user.id}")
-
-        try:
-            job = context.job_queue.run_once(
-                process_user_mailbox,
-                when=0,  # Run immediately
-                data={"user_id": user.id},
-                name=f"user_{user.id}_summary_trigger",
-            )
-            logger.info(f"Job scheduled: {job}")
-        except Exception as job_error:
-            logger.error(f"Error scheduling job: {str(job_error)}")
-            await update.message.reply_text(
-                "An error occurred while scheduling the summary. Please try again later."
-            )
-            return
-
-        logger.info(
-            f"Successfully scheduled process_user_mailbox for user_id: {user.id}"
-        )
-
-        # Add a check to see if the job was actually scheduled
-        scheduled_jobs = context.job_queue.get_jobs_by_name(
-            f"user_{user.id}_summary_trigger"
-        )
-        if not scheduled_jobs:
-            logger.error(
-                f"Job was not found in the queue after scheduling for user_id: {user.id}"
-            )
-            await update.message.reply_text(
-                "An error occurred while scheduling the summary. Please try again later."
-            )
-            return
-
-        logger.info(f"Job found in queue: {scheduled_jobs[0]}")
+        return SELECTING_MAILBOX_FOR_SUMMARY
 
     except Exception as e:
-        logger.error(f"Error triggering summary: {str(e)}")
-        await update.message.reply_text(
-            "An error occurred while triggering the summary. Please try again later."
-        )
+        logger.error(f"Error in trigger_summary: {str(e)}")
+        await update.message.reply_text("An error occurred. Please try again later.")
+        return ConversationHandler.END
     finally:
         session.close()
+
+
+async def mailbox_selected_for_summary(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+):
+    query = update.callback_query
+    await query.answer()
+    chat_id = update.effective_chat.id
+    selection = query.data.split(":")[1]
+
+    if selection == "all":
+        session = get_session()
+        try:
+            user = session.query(User).filter_by(chat_id=str(chat_id)).first()
+            for mailbox in user.mailboxes:
+                await process_single_mailbox(context.bot, chat_id, mailbox.id)
+        finally:
+            session.close()
+    else:
+        mailbox_id = int(selection)
+        await process_single_mailbox(context.bot, chat_id, mailbox_id)
+
+    await query.edit_message_text("Summary process completed.")
+    return ConversationHandler.END
+
+
+trigger_summary_handler = ConversationHandler(
+    entry_points=[CommandHandler("trigger_summary", trigger_summary)],
+    states={
+        SELECTING_MAILBOX_FOR_SUMMARY: [
+            CallbackQueryHandler(mailbox_selected_for_summary, pattern=r"^summary:")
+        ],
+    },
+    fallbacks=[],
+)
 
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
