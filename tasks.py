@@ -129,8 +129,17 @@ async def process_single_mailbox(bot, chat_id, mailbox_id):
             )
             return
 
+        await bot.send_message(
+            chat_id=chat_id,
+            text=f"Processing mailbox: {mailbox.email}",
+        )
+
         unread_emails = await fetch_emails_for_mailbox(mailbox)
         if unread_emails:
+            await bot.send_message(
+                chat_id=chat_id,
+                text=f"Found {len(unread_emails)} new emails in {mailbox.email}. Generating summary...",
+            )
             summary = await summarize_emails(unread_emails)
             if summary:
                 await send_summary(bot, chat_id, summary)
@@ -142,7 +151,7 @@ async def process_single_mailbox(bot, chat_id, mailbox_id):
         else:
             await bot.send_message(
                 chat_id=chat_id,
-                text=f"No new unread emails for {mailbox.email}",
+                text=f"No new unread emails found in {mailbox.email}",
             )
 
         mailbox.calculate_next_summary_time()

@@ -281,19 +281,39 @@ async def mailbox_selected_for_summary(
     chat_id = update.effective_chat.id
     selection = query.data.split(":")[1]
 
-    if selection == "all":
-        session = get_session()
-        try:
-            user = session.query(User).filter_by(chat_id=str(chat_id)).first()
-            for mailbox in user.mailboxes:
-                await process_single_mailbox(context.bot, chat_id, mailbox.id)
-        finally:
-            session.close()
-    else:
-        mailbox_id = int(selection)
-        await process_single_mailbox(context.bot, chat_id, mailbox_id)
+    # Provide immediate feedback
+    await query.edit_message_text("Processing your request. Please wait...")
 
-    await query.edit_message_text("Summary process completed.")
+    try:
+        if selection == "all":
+            session = get_session()
+            try:
+                user = session.query(User).filter_by(chat_id=str(chat_id)).first()
+                if user and user.mailboxes:
+                    for mailbox in user.mailboxes:
+                        await process_single_mailbox(context.bot, chat_id, mailbox.id)
+                    await context.bot.send_message(
+                        chat_id=chat_id, text="All mailboxes have been processed."
+                    )
+                else:
+                    await context.bot.send_message(
+                        chat_id=chat_id, text="No mailboxes found for processing."
+                    )
+            finally:
+                session.close()
+        else:
+            mailbox_id = int(selection)
+            await process_single_mailbox(context.bot, chat_id, mailbox_id)
+            await context.bot.send_message(
+                chat_id=chat_id, text="Mailbox has been processed."
+            )
+    except Exception as e:
+        logger.error(f"Error in mailbox_selected_for_summary: {str(e)}")
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text="An error occurred while processing your request. Please try again later.",
+        )
+
     return ConversationHandler.END
 
 
