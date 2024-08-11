@@ -11,7 +11,7 @@ from telegram.ext import (
 )
 from database.models import get_session, User, Mailbox, SummaryFrequency
 from api_clients.mail_tm import mail_tm_client
-from tasks import process_single_mailbox
+from tasks import process_single_mailbox, process_user_mailboxes
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -194,7 +194,7 @@ async def frequency_selected(update: Update, context: ContextTypes.DEFAULT_TYPE)
             user = mailbox.user
             next_run = min(mb.next_summary_time for mb in user.mailboxes)
             context.job_queue.run_once(
-                process_user_mailbox,
+                process_user_mailboxes,
                 when=next_run,
                 data={"user_id": user.id},
                 name=f"user_{user.id}_summary",

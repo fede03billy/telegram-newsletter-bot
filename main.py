@@ -11,7 +11,7 @@ from bot.commands import (
     trigger_summary_handler,
 )
 from sqlalchemy import text
-from tasks import process_user_mailbox
+from tasks import process_user_mailboxes
 
 # Set up logging
 logging.basicConfig(
@@ -75,7 +75,7 @@ def main():
             )
             if next_run:
                 application.job_queue.run_once(
-                    process_user_mailbox,
+                    process_user_mailboxes,
                     when=next_run,
                     data={"user_id": user.id},
                     name=f"user_{user.id}_summary",
